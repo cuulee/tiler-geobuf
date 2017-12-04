@@ -27,7 +27,7 @@ Another reason for this is algorithm has a much more direct, less dynamic approa
 Implement a clean api for a server on just a raw geobuf datset, also incorporate that server into an existing mbtiles server via configuration. This will work by mapping each feature in a geobuf dynamic set to a positonal read of the geobuf file and then building the tile. The raw geobuf api shouldn't take long to implement however the configuration aspect with existing mbtile or mbtiles datasets may be annoying 
 
 ## Notes:
-  * Api should allow for a full map or update on a dynamic dataset probably by the request /dynamic_layer_name/update 
+  * Api should allow for a full map or update on a dynamic dataset probably by the get or post request /dynamic_layer_name/update 
   * Api should allow for multiple dynamic datasets 
   * Api should implement some sort of rudimentary cache system for dynamic layers (mbtiles layers aren't super needed)
   * Should be aware that I'm now implementing a server instead of what would normally be a static process, this isn't something I'm super familiar with on a package level. 
