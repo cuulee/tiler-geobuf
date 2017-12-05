@@ -38,7 +38,9 @@ func Create_File_Geobuf(tileid m.TileID,dir string) *g.Geobuf {
 	if nil != err {
 		fmt.Println(err)
 	}
-	return g.Geobuf_File(filename)
+	geob := g.Geobuf_File(filename)
+	geob.Filename = filename
+	return geob
 }
 
 func Fix_Increment(sizes [][2]int,increment int) [][][2]int {
@@ -103,9 +105,30 @@ func Map_Polygon(i *geojson.Feature,zoom int,k m.TileID) map[m.TileID][]*geojson
 	return partmap
 }
 
+func Within_Child(childbds m.Extrema,featbds m.Extrema) bool {
+	if (childbds.N >= featbds.N) && (childbds.E >= featbds.E) && 
+	(childbds.S <= featbds.S) && (childbds.W <= featbds.W) {
+		return true
+	} else {
+		return false 
+	} 
+	return false
+}
+
 
 // maps an individual feature
 func Map_Feature(feat *geojson.Feature,zoom int,k m.TileID) map[m.TileID][]*geojson.Feature {
+	featbds := Get_Bds(feat.Geometry)
+	// checking for simple within
+	if feat.Geometry.Type != "Point" {
+		for _,child := range m.Children(k) {
+			childbds := m.Bounds(child)
+			if Within_Child(childbds,featbds) == true {
+				return map[m.TileID][]*geojson.Feature{child:[]*geojson.Feature{feat}}
+			}
+		}
+	}
+
 	if feat.Geometry.Type == "Point" {
 		return Map_Point(feat,zoom)
 	} else if feat.Geometry.Type == "LineString" {
@@ -115,6 +138,57 @@ func Map_Feature(feat *geojson.Feature,zoom int,k m.TileID) map[m.TileID][]*geoj
 	}
 	return map[m.TileID][]*geojson.Feature{}
 }
+
+func Get_Delta(bds m.Extrema) (float64,float64) {
+	return (bds.E - bds.W),(bds.N - bds.S)
+}
+ 
+
+func Size_Comp(bds m.Extrema,featbds m.Extrema) bool {
+	deltax,deltay := Get_Delta(bds)
+	deltaxf,deltayf := Get_Delta(featbds)
+	if ((deltax * .001) < deltaxf) || ((deltay * .001) < deltayf) {
+		return true
+	}
+	return false
+}
+ 
+
+
+
+// maps an individual feature
+func Map_Feature_Reduce(feat *geojson.Feature,zoom int,k m.TileID) map[m.TileID][]*geojson.Feature {
+	featbds := Get_Bds(feat.Geometry)
+
+	children := m.Children(k)
+	bds := m.Bounds(children[0])
+
+	//if AreaBds(bds) * .001 > AreaBds(featbds) {
+	if Size_Comp(bds,featbds) == true {
+		return map[m.TileID][]*geojson.Feature{} 
+	}
+	//}
+
+	// checking for simple within
+	if feat.Geometry.Type != "Point" {
+		for _,child := range children {
+			childbds := m.Bounds(child)
+			if Within_Child(childbds,featbds) == true {
+				return map[m.TileID][]*geojson.Feature{child:[]*geojson.Feature{feat}}
+			}
+		}
+	}
+
+	if feat.Geometry.Type == "Point" {
+		return Map_Point(feat,zoom)
+	} else if feat.Geometry.Type == "LineString" {
+		return Map_Line(feat,zoom,k)
+	} else if feat.Geometry.Type == "Polygon" {
+		return Map_Polygon(feat,zoom,k)
+	}
+	return map[m.TileID][]*geojson.Feature{}
+}
+
 
 
 // removes the old filemap
@@ -163,7 +237,7 @@ func (filemap *File_Map) Add_Map(tilemap map[m.TileID][]*geojson.Feature) {
 // drills the map one farther down then previously before
 func (filemap *File_Map) Drill_Map() *File_Map {
 	newfilemap := &File_Map{Dir:filemap.Dir,Zoom:filemap.Zoom+1,File_Map:map[m.TileID]*g.Geobuf{},Increment:filemap.Increment,Config:filemap.Config}
-	newfilemap.Add_Files(filemap)
+	//newfilemap.Add_Files(filemap)
 	// iterating through each file in the filemap
 	increment := 4
 	geobufs := []Geobuf_Output{}
@@ -205,7 +279,10 @@ func Make_Geobufs(geobufs []Geobuf_Output,filemap *File_Map) {
 			wg.Add(1)
 			go func(out Geobuf_Output,filemap *File_Map) {
 				filemap.Add_Geobuf(out.Geobuf,out.TileID)
+				out.Geobuf.File.File.Close()
+				os.Remove(out.Geobuf.Filename)
 				wg.Done()
+
 			}(out,filemap)
 		}
 		wg.Wait()
@@ -226,7 +303,7 @@ func Map_Bulk(newlist [][2]int,geobuf *g.Geobuf,filemap *File_Map,k m.TileID,boo
 		if boolval == true {
 			filemap.Add_Map_First(<-c)
 		} else {
-			filemap.Add_Map(<-c)
+			filemap.Add_Map_First(<-c)
 
 		}
 	}

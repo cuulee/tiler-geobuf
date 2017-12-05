@@ -2,12 +2,13 @@ package gotile
 
 import (
 	m "github.com/murphy214/mercantile"
-	"vector-tile/2.1"
+	"github.com/murphy214/gotile-geobuf/vector-tile/2.1"
 	"github.com/golang/protobuf/proto"
 	g "github.com/murphy214/geobuf"
 	"reflect"
-	//"fmt"
+	"fmt"
 	"sync"
+	"github.com/paulmach/go.geojson"
 )
 
 var dirmap sync.Map
@@ -102,14 +103,14 @@ type Properties_Config struct {
 	KeysCount   uint32
 	Values      []*vector_tile.Tile_Value
 	ValuesCount uint32
-	KeysMap     sync.Map
-	ValuesMap   sync.Map
+	KeysMap     *sync.Map
+	ValuesMap   *sync.Map
 }
 
 // updates all values and tags
 // handles 4 objects keys,values,keymap,valuesmap
 // also returns tags
-func Update_Properties2(properties map[string]interface{}, prop Properties_Config) ([]uint32, Properties_Config) {
+func (prop *Properties_Config) Update_Properties(properties map[string]interface{}) ([]uint32) {
 	tags := []uint32{}
 	// iterating through each property
 	for k, v := range properties {
@@ -129,7 +130,7 @@ func Update_Properties2(properties map[string]interface{}, prop Properties_Confi
 			tags = append(tags, eh)
 		}
 		// logic for keys
-		valueint, valuebool := prop.KeysMap.LoadOrStore(k, prop.KeysCount)
+		valueint, valuebool := prop.KeysMap.LoadOrStore(value, prop.KeysCount)
 		if valuebool == false {
 			prop.Values = append(prop.Values, value)
 			tags = append(tags, prop.ValuesCount)
@@ -142,7 +143,7 @@ func Update_Properties2(properties map[string]interface{}, prop Properties_Confi
 		}
 	}
 
-	return tags, prop
+	return tags
 }
 
 // makes a single tile for a given polygon
@@ -209,6 +210,182 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string) Vector_Tile {
 		Extent:   &extent,
 		Values:   values,
 		Keys:     keys,
+		Features: features,
+	}
+
+	tile := vector_tile.Tile{}
+	tile.Layers = append(tile.Layers, &layer)
+	bytevals,_ = proto.Marshal(&tile)
+	
+
+	return Vector_Tile{Data:bytevals,Tileid:tileid}
+}
+
+
+// makes a single tile for a given polygon
+func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string) Vector_Tile {
+	// intializing shit for cursor
+	bound := m.Bounds(tileid)
+	deltax := bound.E-bound.W
+	deltay := bound.N - bound.S
+
+	var keys []string
+	var values []*vector_tile.Tile_Value
+	keysmap := map[string]uint32{}
+	valuesmap := map[*vector_tile.Tile_Value]uint32{}
+
+	// iterating through each feature
+	features := []*vector_tile.Tile_Feature{}
+	
+	// setting and converting coordinate	
+	cur := Cursor{LastPoint:[]int32{0,0},Bounds:bound,DeltaX:deltax,DeltaY:deltay,Count:0}
+	cur = Convert_Cursor(cur)
+	var bytevals []byte
+	//position := []int32{0, 0}
+	for _,i := range feats {
+		// creating cursor used in geometry creation
+		var tags, geometry []uint32
+		var feat vector_tile.Tile_Feature
+		tags, keys, values, keysmap, valuesmap = Update_Properties(i.Properties, keys, values, keysmap, valuesmap)
+
+		// logic for point feature
+		if i.Geometry.Type == "Point" {
+			geometry = cur.Make_Point_Float(i.Geometry.Point)
+			feat_type := vector_tile.Tile_POINT
+			feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+			features = append(features, &feat)
+
+		} else if i.Geometry.Type == "LineString" {
+			if len(i.Geometry.LineString) >= 2 {
+				geometry = cur.Make_Line_Float(i.Geometry.LineString)
+				if geometry[3] > 2 {
+					feat_type := vector_tile.Tile_LINESTRING
+					feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+					features = append(features, &feat)
+				}
+
+			}
+		} else if i.Geometry.Type == "Polygon" {
+			geometry = cur.Make_Polygon_Float(i.Geometry.Polygon)
+			feat_type := vector_tile.Tile_POLYGON
+			feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+			features = append(features, &feat)
+
+		}
+
+	}
+
+	layerVersion := uint32(15)
+	extent := vector_tile.Default_Tile_Layer_Extent
+	//var bound []Bounds
+	layername := prefix
+	layer := vector_tile.Tile_Layer{
+		Version:  &layerVersion,
+		Name:     &layername,
+		Extent:   &extent,
+		Values:   values,
+		Keys:     keys,
+		Features: features,
+	}
+
+	tile := vector_tile.Tile{}
+	tile.Layers = append(tile.Layers, &layer)
+	bytevals,_ = proto.Marshal(&tile)
+	
+
+	return Vector_Tile{Data:bytevals,Tileid:tileid}
+}
+
+
+// makes a single tile for a given polygon
+func Make_Tile_Geojson2(tileid m.TileID,feats []*geojson.Feature, prefix string) Vector_Tile {
+	// intializing shit for cursor
+	bound := m.Bounds(tileid)
+	deltax := bound.E-bound.W
+	deltay := bound.N - bound.S
+
+	//var keys []string
+	//var values []*vector_tile.Tile_Value
+	//keysmap := map[string]uint32{}
+	//valuesmap := map[*vector_tile.Tile_Value]uint32{}
+
+	// iterating through each feature
+	features := []*vector_tile.Tile_Feature{}
+	c := make(chan *vector_tile.Tile_Feature)
+	// setting and converting coordinate	
+	cur := Cursor{LastPoint:[]int32{0,0},Bounds:bound,DeltaX:deltax,DeltaY:deltay,Count:0}
+	cur = Convert_Cursor(cur)
+	var bytevals []byte
+	var mapme sync.Map 
+	config := &Properties_Config{KeysMap:&mapme,ValuesMap:&mapme}
+
+	//position := []int32{0, 0}
+	for _,i := range feats {
+		go func(i *geojson.Feature,c chan *vector_tile.Tile_Feature) {
+			// creating cursor used in geometry creation
+			//var tags, geometry []uint32
+			tags := config.Update_Properties(i.Properties)
+			var geometry []uint32
+
+			// logic for point feature
+			if i.Geometry.Type == "Point" {
+				geometry = cur.Make_Point_Float(i.Geometry.Point)
+				feat_type := vector_tile.Tile_POINT
+				c <- &vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+				//features = append(features, &feat)
+
+			} else if i.Geometry.Type == "LineString" {
+				if len(i.Geometry.LineString) >= 2 {
+					geometry = cur.Make_Line_Float(i.Geometry.LineString)
+					if geometry[3] > 2 {
+						feat_type := vector_tile.Tile_LINESTRING
+						c <- &vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+						//features = append(features, &feat)
+					} else {
+						c <- &vector_tile.Tile_Feature{}
+
+					}
+
+				} else {
+					c <- &vector_tile.Tile_Feature{}
+				}
+			} else if i.Geometry.Type == "Polygon" {
+				geometry = cur.Make_Polygon_Float(i.Geometry.Polygon)
+				feat_type := vector_tile.Tile_POLYGON
+				c <- &vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+				//features = append(features, &feat)
+
+			} else {
+				c <- &vector_tile.Tile_Feature{}
+			}
+		}(i,c)
+
+
+
+
+
+	}	
+
+	for i := range feats {
+		out := <-c
+		if len(out.Geometry) > 0 {
+			features = append(features,out)
+		}
+		fmt.Printf("\r[%d/%d] Features",i,len(feats))
+	}
+
+	//fmt.Println(config.Values)
+	//fmt.Println(config)
+	layerVersion := uint32(15)
+	extent := vector_tile.Default_Tile_Layer_Extent
+	//var bound []Bounds
+	layername := prefix
+	layer := vector_tile.Tile_Layer{
+		Version:  &layerVersion,
+		Name:     &layername,
+		Extent:   &extent,
+		Values:   config.Values,
+		Keys:     config.Keys,
 		Features: features,
 	}
 
