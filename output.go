@@ -12,6 +12,7 @@ import (
 	"github.com/paulmach/go.geojson"
 	"os"
 	"log"
+	"time"
 )
 
 // Configuration shit
@@ -29,6 +30,9 @@ type Config struct {
 	New_Output bool // output whether to delete the old output or keep it
 	Json_Meta string // json metadata
 	FirstFeature *geojson.Feature
+	Drill_Zoom int
+	StartTime time.Time
+	TotalTiles int
 }
 
 // vector tile struct 
@@ -47,7 +51,6 @@ func Expand_Config(config Config) Config {
 	}
 
 	config.Zooms = zooms
-	config.OutputFilename = config.Prefix + ".mbtiles"
 	return config
 }
 
@@ -315,7 +318,7 @@ func Insert_Data2(newmap map[m.TileID]Vector_Tile,db *sql.DB,config Config) *sql
 
 
 // inserting data into shit
-func Insert_Data3(newmap []Vector_Tile,db *sql.DB,config Config) *sql.DB {
+func Insert_Data3(newmap []Vector_Tile,db *sql.DB,config Config) Config {
 	tx, err := db.Begin()
 	if err != nil {
 		fmt.Println(err)
@@ -354,12 +357,15 @@ func Insert_Data3(newmap []Vector_Tile,db *sql.DB,config Config) *sql.DB {
 				fmt.Print(err,"\n")
 			}
 		}	
+		config.TotalTiles += 1
 
 		count3 += 1
-		if count3 == 10 {
+		if count3 == 100 {
 			count3 = 0
-			total += 10
-			fmt.Printf("\r[%d/%d] Compressing tiles and inserting into db.",total,sizenewmap)
+			total += 100
+			//config.TotalTiles += 100
+			tiles_a_sec := float64(config.TotalTiles) / time.Now().Sub(config.StartTime).Seconds() 
+			fmt.Printf("\r[%d/%d] Inserting Tiles | %f tiles / sec",total,sizenewmap,tiles_a_sec)
 		}
 
 		//fmt.Print(count,"\n")
@@ -371,7 +377,7 @@ func Insert_Data3(newmap []Vector_Tile,db *sql.DB,config Config) *sql.DB {
 	tx.Commit()
 
 
-	return db
+	return config
 	
 }
 

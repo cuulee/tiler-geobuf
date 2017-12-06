@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"path/filepath"
+	"time"
 )
 
 
@@ -325,6 +326,7 @@ func (newfilemap *File_Map) Add_Files(oldfilemap *File_Map) {
 
 // creates an initial File_Map
 func Create_Map(geobuf *g.Geobuf,config Config) *File_Map {
+	config.StartTime = time.Now()
 	newlist := [][2]int{}
 	config = Expand_Config(config)
 	filemap := &File_Map{Dir:config.Dir,Zoom:config.Minzoom,File_Map:map[m.TileID]*g.Geobuf{},Increment:config.Increment,Config:config}

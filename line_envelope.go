@@ -213,6 +213,18 @@ func opp_axis(val string) string {
 
 	return val
 }
+// 
+func Get_Centroid_TileID(coords [][]float64,zoom int) m.TileID {
+	totalx,totaly := 0.0,0.0
+	for _,pt := range coords {
+		totalx += pt[0]
+		totaly += pt[1]
+	}
+	centx,centy := totalx/float64(len(coords)),totaly/float64(len(coords))
+	return m.Tile(centx,centy,zoom)
+}	
+
+
 
 // functionifying this section so it doesnt get massive pretty decent break point
 func Env_Line(line *geojson.Feature, zoom int) map[m.TileID][]*geojson.Feature {
@@ -268,7 +280,7 @@ func Env_Line(line *geojson.Feature, zoom int) map[m.TileID][]*geojson.Feature {
 				tilecoords = append(tilecoords, []float64{oldpt.X, oldpt.Y})
 
 				tilecoords = append(tilecoords, intersectpt)
-
+				oldtileid = Get_Centroid_TileID(tilecoords,zoom)
 				// creating new geometry
 				newgeom := geojson.Geometry{Type: "LineString"}
 				newgeom.LineString = tilecoords
@@ -295,6 +307,8 @@ func Env_Line(line *geojson.Feature, zoom int) map[m.TileID][]*geojson.Feature {
 	// adding the last feature
 	newe := geojson.Geometry{Type: "LineString"}
 	newe.LineString = tilecoords
+	oldtileid = Get_Centroid_TileID(tilecoords,zoom)
+
 	tilemap[oldtileid] = append(tilemap[oldtileid], &geojson.Feature{Geometry: &newe, Properties: properties})
 
 	return tilemap
