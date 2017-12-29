@@ -79,7 +79,12 @@ func (filemap *File_Map) Zoom_Pass(db *sql.DB) *sql.DB {
 
 			if boolval == false {
 			//fmt.Println(Number_Features(int(k.Z),filemap.Config.Maxzoom,v.Total_Features))
-				c <- []Vector_Tile{Make_Tile(k,v,filemap.Config.Prefix)}
+				c <- []Vector_Tile{Make_Tile(k, // tileid
+					v, // geobuf
+					filemap.Config.Prefix, // prefix
+					filemap.Config.PointMapping, // pointmapping integer
+					filemap.Config.PercentMapping, // percent mapping integer
+				)}
 			} else {
 
 				//fmt.Println(sizemem)
@@ -89,7 +94,12 @@ func (filemap *File_Map) Zoom_Pass(db *sql.DB) *sql.DB {
 				if nil != err {
 					fmt.Println(err)
 				}
-				first_tile := Make_Tile(k,v,filemap.Config.Prefix)
+				first_tile := Make_Tile(k, // tileid
+					v, // geobuf
+					filemap.Config.Prefix, // prefix
+					filemap.Config.PointMapping, // pointmapping integer
+					filemap.Config.PercentMapping, // percent mapping integer
+				)
 
 				v.File.File.Close()
 

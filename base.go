@@ -35,10 +35,11 @@ func File_Name(tileid m.TileID,dir string) string {
 // creates a file geobuf
 func Create_File_Geobuf(tileid m.TileID,dir string) *g.Geobuf {
 	filename := File_Name(tileid,dir)
-	_,err := os.Create(filename)
+	f,err := os.Create(filename)
 	if nil != err {
 		fmt.Println(err)
 	}
+	f.Close()
 	geob := g.Geobuf_File(filename)
 	geob.Filename = filename
 	return geob
@@ -144,7 +145,6 @@ func Get_Delta(bds m.Extrema) (float64,float64) {
 	return (bds.E - bds.W),(bds.N - bds.S)
 }
  
-
 func Size_Comp(bds m.Extrema,featbds m.Extrema) bool {
 	deltax,deltay := Get_Delta(bds)
 	deltaxf,deltayf := Get_Delta(featbds)
@@ -154,9 +154,6 @@ func Size_Comp(bds m.Extrema,featbds m.Extrema) bool {
 	return false
 }
  
-
-
-
 // maps an individual feature
 func Map_Feature_Reduce(feat *geojson.Feature,zoom int,k m.TileID) map[m.TileID][]*geojson.Feature {
 	featbds := Get_Bds(feat.Geometry)

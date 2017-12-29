@@ -33,6 +33,8 @@ type Config struct {
 	Drill_Zoom int
 	StartTime time.Time
 	TotalTiles int
+	PointMapping int
+	PercentMapping float64
 }
 
 // vector tile struct 

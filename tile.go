@@ -147,12 +147,13 @@ func (prop *Properties_Config) Update_Properties(properties map[string]interface
 }
 
 // makes a single tile for a given polygon
-func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string) Vector_Tile {
+func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int,percent_mapping float64) Vector_Tile {
 	// intializing shit for cursor
 	bound := m.Bounds(tileid)
 	deltax := bound.E-bound.W
 	deltay := bound.N - bound.S
 
+	// random intializatioin for property collection
 	var keys []string
 	var values []*vector_tile.Tile_Value
 	keysmap := map[string]uint32{}
@@ -165,40 +166,58 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string) Vector_Tile {
 	cur := Cursor{LastPoint:[]int32{0,0},Bounds:bound,DeltaX:deltax,DeltaY:deltay,Count:0}
 	cur = Convert_Cursor(cur)
 	var bytevals []byte
+
+	// creating new mapper
+	mapper := New_Mapper(tileid,size_mapping,percent_mapping)
+	
 	//position := []int32{0, 0}
 	for _,pos := range geobuf.Sizes {
-		// creating cursor used in geometry creation
-		i := geobuf.FeaturePos(pos)
-		var tags, geometry []uint32
-		var feat vector_tile.Tile_Feature
-		tags, keys, values, keysmap, valuesmap = Update_Properties(i.Properties, keys, values, keysmap, valuesmap)
+		// appplying the soft boudning box filter
+		bb := geobuf.File.BoundingBox_FeaturePos(pos)
+		boolval := mapper.Filter(bb)
+		
+		// if true send into creation
+		if boolval == true {
+			// douglas pecker the feature geometry 
+			// if turns out to be null drop feature
+			i := geobuf.FeaturePos(pos)
+			i.Geometry = RDP(i.Geometry,int(tileid.Z))
+			if i.Geometry.Type == "" {
+				i = &geojson.Feature{}
+			}
 
-		// logic for point feature
-		if i.Geometry.Type == "Point" {
-			geometry = cur.Make_Point_Float(i.Geometry.Point)
-			feat_type := vector_tile.Tile_POINT
-			feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
-			features = append(features, &feat)
+			// adding properties and getting correct tags
+			var tags, geometry []uint32
+			var feat vector_tile.Tile_Feature
+			tags, keys, values, keysmap, valuesmap = Update_Properties(i.Properties, keys, values, keysmap, valuesmap)
 
-		} else if i.Geometry.Type == "LineString" {
-			if len(i.Geometry.LineString) >= 2 {
-				geometry = cur.Make_Line_Float(i.Geometry.LineString)
-				if geometry[3] > 2 {
-					feat_type := vector_tile.Tile_LINESTRING
-					feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
-					features = append(features, &feat)
+			// logic for point feature
+			if i.Geometry.Type == "Point" {
+				geometry = cur.Make_Point_Float(i.Geometry.Point)
+				feat_type := vector_tile.Tile_POINT
+				feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+				features = append(features, &feat)
+
+			} else if i.Geometry.Type == "LineString" {
+				if len(i.Geometry.LineString) >= 2 {
+					geometry = cur.Make_Line_Float(i.Geometry.LineString)
+					if geometry[3] > 2 {
+						feat_type := vector_tile.Tile_LINESTRING
+						feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+						features = append(features, &feat)
+					}
+
 				}
+			} else if i.Geometry.Type == "Polygon" {
+				geometry = cur.Make_Polygon_Float(i.Geometry.Polygon)
+				feat_type := vector_tile.Tile_POLYGON
+				feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
+				features = append(features, &feat)
 
 			}
-		} else if i.Geometry.Type == "Polygon" {
-			geometry = cur.Make_Polygon_Float(i.Geometry.Polygon)
-			feat_type := vector_tile.Tile_POLYGON
-			feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
-			features = append(features, &feat)
-
 		}
-
 	}
+	//fmt.Println(len(features))
 
 	layerVersion := uint32(15)
 	extent := vector_tile.Default_Tile_Layer_Extent
@@ -222,7 +241,7 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string) Vector_Tile {
 }
 
 //var sema2 = make(chan struct{}, 1000)
-
+/*
 // makes a single tile for a given polygon
 func Make_Tile2(tileid m.TileID,geobuf *g.Geobuf, prefix string) Vector_Tile {
 	// intializing shit for cursor
@@ -257,6 +276,10 @@ func Make_Tile2(tileid m.TileID,geobuf *g.Geobuf, prefix string) Vector_Tile {
 			// creating cursor used in geometry creation
 			//var tags, geometry []uint32
 			i := geobuf.FeaturePos(pos)
+			i.Geometry = rdp.RDP(i.Geometry,int(tileid.Z))
+			if i.Geometry.Type == "" {
+				i = &geojson.Feature{}
+			}
 			tags := config.Update_Properties(i.Properties)
 			var geometry []uint32
 
@@ -320,6 +343,7 @@ func Make_Tile2(tileid m.TileID,geobuf *g.Geobuf, prefix string) Vector_Tile {
 		count += 1
 		fmt.Printf("\r[%d/%d] Features",count,total)
 	}
+	//fmt.Println(len(features))
 
 	//fmt.Println(config.Values)
 	//fmt.Println(config)
@@ -343,7 +367,7 @@ func Make_Tile2(tileid m.TileID,geobuf *g.Geobuf, prefix string) Vector_Tile {
 
 	return Vector_Tile{Data:bytevals,Tileid:tileid}
 }
-
+*/
 
 // makes a single tile for a given polygon
 func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string) Vector_Tile {
@@ -369,6 +393,12 @@ func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string) 
 		// creating cursor used in geometry creation
 		var tags, geometry []uint32
 		var feat vector_tile.Tile_Feature
+		/*
+		i.Geometry = rdp.RDP(i.Geometry,int(tileid.Z))
+		if i.Geometry.Type == "" {
+			i = &geojson.Feature{}
+		}
+		*/
 		tags, keys, values, keysmap, valuesmap = Update_Properties(i.Properties, keys, values, keysmap, valuesmap)
 
 		// logic for point feature
@@ -397,6 +427,7 @@ func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string) 
 		}
 
 	}
+	//fmt.Println(len(features))
 
 	layerVersion := uint32(15)
 	extent := vector_tile.Default_Tile_Layer_Extent
@@ -446,7 +477,13 @@ func Make_Tile_Geojson2(tileid m.TileID,feats []*geojson.Feature, prefix string)
 	for _,i := range feats {
 		go func(i *geojson.Feature,c chan *vector_tile.Tile_Feature) {
 			// creating cursor used in geometry creation
+
 			//var tags, geometry []uint32
+			/*i.Geometry = rdp.RDP(i.Geometry,int(tileid.Z))
+			if i.Geometry.Type == "" {
+				i = &geojson.Feature{}
+			}
+			*/
 			tags := config.Update_Properties(i.Properties)
 			var geometry []uint32
 
@@ -496,6 +533,8 @@ func Make_Tile_Geojson2(tileid m.TileID,feats []*geojson.Feature, prefix string)
 		}
 		fmt.Printf("\r[%d/%d] Features",i,len(feats))
 	}
+	//fmt.Println(len(features))
+
 
 	//fmt.Println(config.Values)
 	//fmt.Println(config)
