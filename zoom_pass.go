@@ -181,5 +181,6 @@ func (filemap *File_Map) Make_Tiles() {
 
 
 	Make_Index(db)
+	os.RemoveAll(filemap.Config.Dir)
 }
 

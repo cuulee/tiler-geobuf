@@ -383,10 +383,12 @@ func Create_Map(geobuf *g.Geobuf,config Config) *File_Map {
 	config.StartTime = time.Now()
 	newlist := [][2]int{}
 	config = Expand_Config(config)
+	os.MkdirAll(config.Dir, os.ModePerm)
 	filemap := &File_Map{Dir:config.Dir,Zoom:config.Minzoom,File_Map:map[m.TileID]*g.Geobuf{},Increment:config.Increment,Config:config}
 	totalcount := 0
 	k := m.TileID{0,0,0}
 	firstbool := false
+
 	for geobuf.Next() {
 		// adding config first feature to config
 		if firstbool == false {

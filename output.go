@@ -20,8 +20,8 @@ type Config struct {
 	Type string // json or mbtiles
 	Minzoom int // minimum zoom
 	Maxzoom int // maximum zoom
-	Increment int
-	Dir string
+	Increment int // how many features are processing concurrently in mapping
+	Dir string // the temporary directory that will be used
 	Prefix string // prefix
 	Zooms []int // zooms (not needed)
 	Currentzoom int // current zoom (not needed)
@@ -29,12 +29,12 @@ type Config struct {
 	Memory float64 // memory (not needed)
 	New_Output bool // output whether to delete the old output or keep it
 	Json_Meta string // json metadata
-	FirstFeature *geojson.Feature
-	Drill_Zoom int
-	StartTime time.Time
-	TotalTiles int
-	PointMapping int
-	PercentMapping float64
+	FirstFeature *geojson.Feature // first feature (intermediate value not user input)
+	Drill_Zoom int // the zoom in which to drill down recursively 
+	StartTime time.Time // (intermediate value)
+	TotalTiles int // (intermediate value)
+	PointMapping int // the dimmension of reduction for points  
+	PercentMapping float64 // the percent of reduction for lines and polygons
 }
 
 // vector tile struct 
@@ -55,8 +55,12 @@ func Expand_Config(config Config) Config {
 	if config.PointMapping == 0 {
 		config.PointMapping = 4096
 	}
+	if config.Dir == "" {
+		config.Dir = "temp"
+	}
 
 	config.Zooms = zooms
+
 	return config
 }
 
