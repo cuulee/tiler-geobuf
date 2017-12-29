@@ -52,6 +52,10 @@ func Expand_Config(config Config) Config {
 		count += 1
 	}
 
+	if config.PointMapping == 0 {
+		config.PointMapping = 4096
+	}
+
 	config.Zooms = zooms
 	return config
 }

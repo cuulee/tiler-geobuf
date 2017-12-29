@@ -122,7 +122,7 @@ func Within_Child(childbds m.Extrema,featbds m.Extrema) bool {
 func Map_Feature(feat *geojson.Feature,zoom int,k m.TileID) map[m.TileID][]*geojson.Feature {
 	featbds := Get_Bds(feat.Geometry)
 	// checking for simple within
-	if feat.Geometry.Type != "Point" {
+	if feat.Geometry.Type != "Point" && k.Z != 0 {
 		for _,child := range m.Children(k) {
 			childbds := m.Bounds(child)
 			if Within_Child(childbds,featbds) == true {
@@ -218,6 +218,30 @@ func (filemap *File_Map) Add_Map_First(tilemap map[m.TileID][]*geojson.Feature) 
 	}
 }
 
+// adds the byte values first
+func (filemap *File_Map) Add_Bytes_First(bytevals []byte,k m.TileID) {
+	filemap.SS.Lock()
+	_,boolval := filemap.File_Map[k]
+	filemap.SS.Unlock()
+	if boolval == false {
+		filemap.SS.Lock()
+		filemap.File_Map[k] = Create_File_Geobuf(k,filemap.Dir)
+		filemap.SS.Unlock()
+	}
+
+	prefix := append([]byte{10},g.EncodeVarint(uint64(len(bytevals)))...)
+	bytevals = append(prefix,bytevals...)
+	filemap.SS.Lock()
+	filemap.File_Map[k].File.File.Write(bytevals)
+	filemap.File_Map[k].File.FileSize += len(bytevals)
+	filemap.File_Map[k].Next()
+	pos := filemap.File_Map[k].File.Feat_Pos
+	filemap.File_Map[k].Sizes = append(filemap.File_Map[k].Sizes,pos)
+	filemap.File_Map[k].Total_Features += 1
+	filemap.SS.Unlock()
+
+}
+
 // adding a channeled temporay map
 func (filemap *File_Map) Add_Map(tilemap map[m.TileID][]*geojson.Feature) {
 	for k,v := range tilemap {
@@ -287,12 +311,45 @@ func Make_Geobufs(geobufs []Geobuf_Output,filemap *File_Map) {
 	}
 }
 
+type Children_Bound struct {
+	TileID m.TileID
+	Bounds m.Extrema
+}
+
+// getting children bounds
+func Get_Children_Bounds(tileid m.TileID) []Children_Bound {
+	children := m.Children(tileid)
+	childs := []Children_Bound{}
+	for _,child := range children {
+		childs = append(childs,Children_Bound{TileID:child,Bounds:m.Bounds(child)})
+	}
+	return childs
+}
+
+
+
 // makes a bulk set of newlist inds
 func Map_Bulk(newlist [][2]int,geobuf *g.Geobuf,filemap *File_Map,k m.TileID,boolval bool) {
 	c := make(chan map[m.TileID][]*geojson.Feature) 
+	childs := Get_Children_Bounds(k)
 	for _,pos := range newlist {
 		go func(pos [2]int,c chan map[m.TileID][]*geojson.Feature) {
-			c <- Map_Feature(geobuf.FeaturePos(pos),filemap.Zoom,k)
+			bb := geobuf.File.BoundingBox_FeaturePos(pos)
+			boolval := false
+			for _,child := range childs {
+				if Within_Child(child.Bounds,bb.BB) == true && k.Z != 0{
+						a := make([]byte,int(pos[0]))	
+						geobuf.File.File.ReadAt(a,int64(pos[1]))			
+						filemap.Add_Bytes_First(a,child.TileID)
+						boolval = true
+				}
+			}
+			if boolval == true {
+				//fmt.Println("skpped")
+				c <- map[m.TileID][]*geojson.Feature{}
+			} else {
+				c <- Map_Feature(geobuf.FeaturePos(pos),filemap.Zoom,k)
+			}
 		}(pos,c)
 	}
 

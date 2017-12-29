@@ -4,7 +4,6 @@ import "math"
 import "github.com/paulmach/go.geojson"
 
 
-
 // RDPSimplify is an in-place implementation of Ramer–Douglas–Peucker.
 func RDPSimplify(points [][]float64, epsilon float64) [][]float64 {
 	return points[:rdpCompress(points, epsilon)]
