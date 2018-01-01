@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync"
 	"github.com/paulmach/go.geojson"
+	util "github.com/murphy214/mbtiles-util"
 )
 
 var dirmap sync.Map
@@ -147,7 +148,7 @@ func (prop *Properties_Config) Update_Properties(properties map[string]interface
 }
 
 // makes a single tile for a given polygon
-func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int,percent_mapping float64) Vector_Tile {
+func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int,percent_mapping float64,rdpbool bool,mbtile util.Mbtiles,logger *Logger) {
 	// intializing shit for cursor
 	bound := m.Bounds(tileid)
 	deltax := bound.E-bound.W
@@ -181,7 +182,10 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int
 			// douglas pecker the feature geometry 
 			// if turns out to be null drop feature
 			i := geobuf.FeaturePos(pos)
-			i.Geometry = RDP(i.Geometry,int(tileid.Z))
+			if rdpbool == true {
+				i.Geometry = RDP(i.Geometry,int(tileid.Z))
+			}
+
 			if i.Geometry.Type == "" {
 				i = &geojson.Feature{}
 			}
@@ -190,9 +194,11 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int
 			var tags, geometry []uint32
 			var feat vector_tile.Tile_Feature
 			tags, keys, values, keysmap, valuesmap = Update_Properties(i.Properties, keys, values, keysmap, valuesmap)
+			//fmt.Println(i.Geometry)
+			// logic for point feature'
+			if i.Geometry == nil {
 
-			// logic for point feature
-			if i.Geometry.Type == "Point" {
+			} else if i.Geometry.Type == "Point" {
 				geometry = cur.Make_Point_Float(i.Geometry.Point)
 				feat_type := vector_tile.Tile_POINT
 				feat = vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}
@@ -217,27 +223,40 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int
 			}
 		}
 	}
-	//fmt.Println(len(features))
 
-	layerVersion := uint32(15)
-	extent := vector_tile.Default_Tile_Layer_Extent
-	//var bound []Bounds
-	layername := prefix
-	layer := vector_tile.Tile_Layer{
-		Version:  &layerVersion,
-		Name:     &layername,
-		Extent:   &extent,
-		Values:   values,
-		Keys:     keys,
-		Features: features,
+	for _,i := range features {
+		if len(i.Geometry) == 0 {
+			fmt.Println(i)
+		}
 	}
 
-	tile := vector_tile.Tile{}
-	tile.Layers = append(tile.Layers, &layer)
-	bytevals,_ = proto.Marshal(&tile)
-	
+	//fmt.Println(len(features))
+	if len(features) > 0 {
+		layerVersion := uint32(15)
+		extent := vector_tile.Default_Tile_Layer_Extent
+		//var bound []Bounds
+		layername := prefix
+		layer := vector_tile.Tile_Layer{
+			Version:  &layerVersion,
+			Name:     &layername,
+			Extent:   &extent,
+			Values:   values,
+			Keys:     keys,
+			Features: features,
+		}
 
-	return Vector_Tile{Data:bytevals,Tileid:tileid}
+		tile := vector_tile.Tile{}
+		tile.Layers = append(tile.Layers, &layer)
+		bytevals,_ = proto.Marshal(&tile)
+		if len(bytevals) > 0 {
+			mbtile.Add_Tile(tileid,bytevals)
+			logger.Add()
+		}
+	} else {
+		bytevals = []byte{}
+	}
+
+	//return Vector_Tile{Data:bytevals,Tileid:tileid}
 }
 
 //var sema2 = make(chan struct{}, 1000)
@@ -370,7 +389,7 @@ func Make_Tile2(tileid m.TileID,geobuf *g.Geobuf, prefix string) Vector_Tile {
 */
 
 // makes a single tile for a given polygon
-func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string) Vector_Tile {
+func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string,mbtile util.Mbtiles,logger *Logger) {
 	// intializing shit for cursor
 	bound := m.Bounds(tileid)
 	deltax := bound.E-bound.W
@@ -428,26 +447,33 @@ func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string) 
 
 	}
 	//fmt.Println(len(features))
+	if len(features) > 0 {
 
-	layerVersion := uint32(15)
-	extent := vector_tile.Default_Tile_Layer_Extent
-	//var bound []Bounds
-	layername := prefix
-	layer := vector_tile.Tile_Layer{
-		Version:  &layerVersion,
-		Name:     &layername,
-		Extent:   &extent,
-		Values:   values,
-		Keys:     keys,
-		Features: features,
+		layerVersion := uint32(15)
+		extent := vector_tile.Default_Tile_Layer_Extent
+		//var bound []Bounds
+		layername := prefix
+		layer := vector_tile.Tile_Layer{
+			Version:  &layerVersion,
+			Name:     &layername,
+			Extent:   &extent,
+			Values:   values,
+			Keys:     keys,
+			Features: features,
+		}
+
+		tile := vector_tile.Tile{}
+		tile.Layers = append(tile.Layers, &layer)
+		bytevals,_ = proto.Marshal(&tile)
+		if len(bytevals) > 0 {
+			mbtile.Add_Tile(tileid,bytevals)
+			logger.Add()
+		}
+	} else {
+		bytevals = []byte{}
 	}
 
-	tile := vector_tile.Tile{}
-	tile.Layers = append(tile.Layers, &layer)
-	bytevals,_ = proto.Marshal(&tile)
-	
-
-	return Vector_Tile{Data:bytevals,Tileid:tileid}
+	//return Vector_Tile{Data:bytevals,Tileid:tileid}
 }
 
 

@@ -222,16 +222,11 @@ func (filemap *File_Map) Add_Map_First(tilemap map[m.TileID][]*geojson.Feature) 
 func (filemap *File_Map) Add_Bytes_First(bytevals []byte,k m.TileID) {
 	filemap.SS.Lock()
 	_,boolval := filemap.File_Map[k]
-	filemap.SS.Unlock()
 	if boolval == false {
-		filemap.SS.Lock()
 		filemap.File_Map[k] = Create_File_Geobuf(k,filemap.Dir)
-		filemap.SS.Unlock()
 	}
-
 	prefix := append([]byte{10},g.EncodeVarint(uint64(len(bytevals)))...)
 	bytevals = append(prefix,bytevals...)
-	filemap.SS.Lock()
 	filemap.File_Map[k].File.File.Write(bytevals)
 	filemap.File_Map[k].File.FileSize += len(bytevals)
 	filemap.File_Map[k].Next()
@@ -331,20 +326,23 @@ func Get_Children_Bounds(tileid m.TileID) []Children_Bound {
 // makes a bulk set of newlist inds
 func Map_Bulk(newlist [][2]int,geobuf *g.Geobuf,filemap *File_Map,k m.TileID,boolval bool) {
 	c := make(chan map[m.TileID][]*geojson.Feature) 
-	childs := Get_Children_Bounds(k)
+	//childs := Get_Children_Bounds(k)
 	for _,pos := range newlist {
 		go func(pos [2]int,c chan map[m.TileID][]*geojson.Feature) {
-			bb := geobuf.File.BoundingBox_FeaturePos(pos)
-			boolval := false
+			
+			//bb := geobuf.File.BoundingBox_FeaturePos(pos)
+			boolval2 := false
+			/*
 			for _,child := range childs {
-				if Within_Child(child.Bounds,bb.BB) == true && k.Z != 0{
+				if Within_Child(child.Bounds,bb.BB) == true && k.Z != 0 {
 						a := make([]byte,int(pos[0]))	
 						geobuf.File.File.ReadAt(a,int64(pos[1]))			
 						filemap.Add_Bytes_First(a,child.TileID)
-						boolval = true
+						boolval2 = true
 				}
 			}
-			if boolval == true {
+			*/
+			if boolval2 == true {
 				//fmt.Println("skpped")
 				c <- map[m.TileID][]*geojson.Feature{}
 			} else {
@@ -382,10 +380,9 @@ func (newfilemap *File_Map) Add_Files(oldfilemap *File_Map) {
 func Create_Map(geobuf *g.Geobuf,config Config) *File_Map {
 	config.StartTime = time.Now()
 	newlist := [][2]int{}
-	config = Expand_Config(config)
 	os.MkdirAll(config.Dir, os.ModePerm)
 	filemap := &File_Map{Dir:config.Dir,Zoom:config.Minzoom,File_Map:map[m.TileID]*g.Geobuf{},Increment:config.Increment,Config:config}
-	totalcount := 0
+	//totalcount := 0
 	k := m.TileID{0,0,0}
 	firstbool := false
 
@@ -393,6 +390,7 @@ func Create_Map(geobuf *g.Geobuf,config Config) *File_Map {
 		// adding config first feature to config
 		if firstbool == false {
 			filemap.Config.FirstFeature = geobuf.FeaturePos(geobuf.File.Feat_Pos)
+			filemap.Config = Expand_Config(filemap.Config)
 			firstbool = true
 		}
 
@@ -400,8 +398,8 @@ func Create_Map(geobuf *g.Geobuf,config Config) *File_Map {
 		if len(newlist) == filemap.Increment {
 			Map_Bulk(newlist,geobuf,filemap,k,true)
 			newlist = [][2]int{}
-			totalcount += filemap.Increment
-			fmt.Printf("\r%d Values Mapped.        ",totalcount)
+			//totalcount += filemap.Increment
+			//fmt.Printf("\r%d Values Mapped.        ",totalcount)
 		}
 
 	}

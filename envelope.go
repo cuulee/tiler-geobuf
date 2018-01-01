@@ -4,10 +4,12 @@ import (
 	m "github.com/murphy214/mercantile"
 	"github.com/paulmach/go.geojson"
 	//"fmt"
+	util "github.com/murphy214/mbtiles-util"
+	"sync"
 )
 
 // recursively drills until the max zoom is reached
-func Make_Zoom_Drill(k m.TileID, v []*geojson.Feature, prefix string, endsize int) []Vector_Tile {
+func Make_Zoom_Drill(k m.TileID, v []*geojson.Feature, prefix string, endsize int,mbtile util.Mbtiles,logger *Logger) {
 	outputsize := int(k.Z) + 1
 	cc := make(chan map[m.TileID][]*geojson.Feature)
 	for _, i := range v {
@@ -40,42 +42,31 @@ func Make_Zoom_Drill(k m.TileID, v []*geojson.Feature, prefix string, endsize in
 
 	// iterating through each value in the child map and waiting to complete
 	//var wg sync.WaitGroup
-	vtchan := make(chan Vector_Tile)
+	var wg sync.WaitGroup
 	for kkk, vvv := range childmap {
 		//childmap = map[m.TileID][]*geojson.Feature{}
-		//wg.Add(1)
-		go func(kkk m.TileID, vvv []*geojson.Feature, prefix string,vtchan chan Vector_Tile) {
-			vtchan <- Make_Tile_Geojson(kkk, vvv, prefix)
+		wg.Add(1)
+		go func(kkk m.TileID, vvv []*geojson.Feature, prefix string) {
+			Make_Tile_Geojson(kkk, vvv, prefix,mbtile,logger)
 				//Make_Zoom_Drill(kkk, vvv, prefix, endsize)
-			//wg.Done()
+			wg.Done()
 
-		}(kkk, vvv, prefix,vtchan)
+		}(kkk, vvv, prefix)
 	}
+	wg.Wait()
 	
-	vector_tiles := []Vector_Tile{}
-	for range childmap {
-		vt := <-vtchan
-		vector_tiles = append(vector_tiles,vt)
-	}
-
 	//wg.Wait()
 	if endsize != outputsize {
-		ccc := make(chan []Vector_Tile)
+		var wgg sync.WaitGroup
 		for kkk, vvv := range childmap {
-			go func(kkk m.TileID, vvv []*geojson.Feature, prefix string,ccc chan []Vector_Tile) {
-				ccc <- Make_Zoom_Drill(kkk,vvv,prefix,endsize)
-			}(kkk,vvv,prefix,ccc)
+			wgg.Add(1)
+			go func(kkk m.TileID, vvv []*geojson.Feature, prefix string) {
+				Make_Zoom_Drill(kkk,vvv,prefix,endsize,mbtile,logger)
+				wgg.Done()
+			}(kkk,vvv,prefix)
 		}
-		// appending to the major vector tiles shit
-		for range childmap {
-			vts := <- ccc
-			vector_tiles = append(vector_tiles,vts...)
-		}
-		return vector_tiles
+		wgg.Wait()
 
 	} else {
-
-
-		return vector_tiles
 	}
 }

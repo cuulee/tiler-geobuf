@@ -11,7 +11,7 @@ func RDPSimplify(points [][]float64, epsilon float64) [][]float64 {
 
 // simplifies a given geometry
 func RDP_Line(line [][]float64,zoom int) [][]float64 {
-	simpl := math.Pow(10,-math.Ceil((float64(zoom) * math.Ln2 + math.Log(256.0 / 360.0 / 0.5)) / math.Ln10))
+	simpl := math.Pow(10,-(math.Ceil((float64(zoom) * math.Ln2 + math.Log(256.0 / 360.0 / 0.5)) / math.Ln10)))
 	return RDPSimplify(line,simpl)
 }
 

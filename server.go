@@ -15,6 +15,7 @@ import (
   "time"
   m "github.com/murphy214/mercantile"
   "strconv"
+  util "github.com/murphy214/mbtiles-util"
 
 )
 
@@ -34,7 +35,7 @@ func Get_Vector_Layers(filename string) []string {
 	//defer db.Close()
 
 	jsonstring := Get_Json_String(db)
-	var vector_layers Vector_Layers
+	var vector_layers util.Vector_Layers
 	_ = json.Unmarshal([]byte(jsonstring),&vector_layers)
 	layernames := []string{}
 	for _,i := range vector_layers.Vector_Layers {
@@ -43,6 +44,20 @@ func Get_Vector_Layers(filename string) []string {
 
 	return layernames
 }
+// gets the json db
+func Get_Json_String(db *sql.DB) string {
+  sqlStmt := `
+  select value from metadata where name = "json";
+  `
+  var jsonstring string
+  err := db.QueryRow(sqlStmt).Scan(&jsonstring)
+
+  if err != nil {
+    log.Printf("%q: %s\n", err, sqlStmt)
+  }
+  return jsonstring
+}
+
 
 func Get_Part_Layer(layername string) string {
 

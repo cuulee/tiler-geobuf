@@ -4,11 +4,11 @@ import (
 	"fmt"
 	g "github.com/murphy214/geobuf"
 	m "github.com/murphy214/mercantile"
-	"database/sql"
+	//"database/sql"
 	"math"
 	"os"
 	"io/ioutil"
-	//"sync"
+	"sync"
 )
 
 
@@ -50,16 +50,13 @@ func (filemap *File_Map) Total_Size() int {
 	return total
 }
 
- 
-
-
-var sema = make(chan struct{}, 10)
-
-
-
-func (filemap *File_Map) Zoom_Pass(db *sql.DB) *sql.DB {
+// zoom pass
+func (filemap *File_Map) Zoom_Pass() {
 	// iterating through each geobuf
-	c := make(chan []Vector_Tile)
+	//c := make(chan []Vector_Tile)
+    maxGoroutines := 3
+    guard := make(chan struct{}, maxGoroutines)
+	
 	//fmt.Println(filemap.Total_Features(),filemap.Config.Currentzoom)
 	//fmt.Println(filemap.Total_Size())
 	boolval := false
@@ -67,24 +64,31 @@ func (filemap *File_Map) Zoom_Pass(db *sql.DB) *sql.DB {
 		boolval = true
 	}
 	//boolval := false
-	size := len(filemap.File_Map)
+	//size := len(filemap.File_Map)
 	//totalmem := 0
-	//var mutex sync.Mutex
+	var wg sync.WaitGroup
+	filemap.Config.Logger.SizeZoom = len(filemap.File_Map)
+	filemap.Config.Logger.CountZoom = 0 
 	for k,v := range filemap.File_Map {
 		//sizemem := Calc_Memory(v.File.FileSize,v.Total_Features,int(k.Z),filemap.Config.Maxzoom)
 		//memorysize := Calc_Memory(v.File.FileSize,int(k.Z),filemap.Config.Maxzoom)
-		go func(k m.TileID,v *g.Geobuf,c chan []Vector_Tile) {
-			sema <- struct{}{}        // acquire token
-			defer func() { <-sema }() // release token
-
+        guard <- struct{}{} // would block if guard channel is already filled
+		wg.Add(1)
+		go func(k m.TileID,v *g.Geobuf) {
 			if boolval == false {
 			//fmt.Println(Number_Features(int(k.Z),filemap.Config.Maxzoom,v.Total_Features))
-				c <- []Vector_Tile{Make_Tile(k, // tileid
+		       	<-guard
+
+				Make_Tile(k, // tileid
 					v, // geobuf
 					filemap.Config.Prefix, // prefix
 					filemap.Config.PointMapping, // pointmapping integer
 					filemap.Config.PercentMapping, // percent mapping integer
-				)}
+					filemap.Config.RDP, // rdpbool
+					filemap.Config.Mbtiles,
+					filemap.Config.Logger,
+				)
+				wg.Done()
 			} else {
 
 				//fmt.Println(sizemem)
@@ -94,11 +98,14 @@ func (filemap *File_Map) Zoom_Pass(db *sql.DB) *sql.DB {
 				if nil != err {
 					fmt.Println(err)
 				}
-				first_tile := Make_Tile(k, // tileid
+				Make_Tile(k, // tileid
 					v, // geobuf
 					filemap.Config.Prefix, // prefix
 					filemap.Config.PointMapping, // pointmapping integer
 					filemap.Config.PercentMapping, // percent mapping integer
+					filemap.Config.RDP, // rdpbool
+					filemap.Config.Mbtiles,
+					filemap.Config.Logger,
 				)
 
 				v.File.File.Close()
@@ -106,57 +113,34 @@ func (filemap *File_Map) Zoom_Pass(db *sql.DB) *sql.DB {
 
 
 				os.Remove(v.Filename)
-				eh := Make_Zoom_Drill(k,g.Read_FeatureCollection(bytevals),filemap.Config.Prefix,filemap.Config.Maxzoom)
-				eh = append(eh,first_tile)
+				Make_Zoom_Drill(k,g.Read_FeatureCollection(bytevals),filemap.Config.Prefix,filemap.Config.Maxzoom,filemap.Config.Mbtiles,filemap.Config.Logger)
 				//totalmem += sizemem
 
 				filemap.SS.Lock()
 				delete(filemap.File_Map,k)
 				filemap.SS.Unlock()
 
+		       	<-guard
 
 				//mutex.Unlock()
-				c <- eh
+				wg.Done()
 
 			}
-
-		}(k,v,c)
+			filemap.Config.Logger.CountZoom += 1
+		}(k,v)
 
 
 	}
-
-	// collecting tiles
-	newlist := []Vector_Tile{}
-	count := 0
-	for count < size {
-		out := <-c
-
-		for _,outt := range out {
-			if len(outt.Data) > 0 {
-				newlist = append(newlist,outt)
-			}
-		}
-		if len(newlist) > 5000000 {
-			filemap.Config = Insert_Data3(newlist,db,filemap.Config)
-			newlist = []Vector_Tile{}
-
-		}
-
-		count += 1
-		fmt.Printf("\r[%d/%d] Tiles Made Zoom: %d                ",count,size,filemap.Config.Currentzoom)
-	}
-	
-	filemap.Config = Insert_Data3(newlist,db,filemap.Config)
-	return db
+	wg.Wait()
+	//filemap.Config = Insert_Data3(newlist,db,filemap.Config)
 
 }
 
 // creating the tiles
 func (filemap *File_Map) Make_Tiles() {
-	db := Create_Database_Meta(filemap.Config,filemap.Config.FirstFeature)
 	//fmt.Printf("%+v%s",db,"Imheredbdv")
 	filemap.Config.Currentzoom = filemap.Zoom
-	db = filemap.Zoom_Pass(db)	
+	filemap.Zoom_Pass()	
 
 	for filemap.Zoom <= filemap.Config.Maxzoom {
 		if len(filemap.File_Map) == 0 {
@@ -167,7 +151,7 @@ func (filemap *File_Map) Make_Tiles() {
 			filemap = filemap.Drill_Map()
 			filemap.Config.Currentzoom = filemap.Zoom
 
-			db = filemap.Zoom_Pass(db)	
+			filemap.Zoom_Pass()	
 		}
 
 
@@ -178,9 +162,8 @@ func (filemap *File_Map) Make_Tiles() {
 	}
 
 
+	filemap.Config.Mbtiles.Commit()
 
-
-	Make_Index(db)
 	os.RemoveAll(filemap.Config.Dir)
 }
 
