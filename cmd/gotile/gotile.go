@@ -28,7 +28,7 @@ func main() {
         geobuf_filename := strings.Split(i,".")[0] + ".geobuf"
         exec.Command("geojson2geobuf",i,geobuf_filename).Run()
         geobuf := g.Geobuf_File(geobuf_filename)
-        config := t.Config_Dynamic{LayerName:i,Minzoom:0,Maxzoom:20}
+        config := t.Config_Dynamic{LayerName:i,Minzoom:0,Maxzoom:15}
         geobuf_server := t.New_Geobuf_Serve(geobuf,config)
         server.Geobufs = append(server.Geobufs,geobuf_server)
       }

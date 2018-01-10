@@ -43,18 +43,17 @@ type Logger struct {
 	CountZoom int
 	SizeZoom int
 	TotalZoom int
-	LastTick time.Time
 }
 
 // adding a logger which will be used within each tile function
-func (logger *Logger) Add() {
+func (logger *Logger) Add(tileid m.TileID) {
 	logger.TotalTiles += 1
 	logger.TotalZoom += 1
-	if time.Now().Sub(logger.LastTick).Seconds() > 1 {
+	if logger.TotalTiles%10000 == 0 {
 		tiles_per_sec := int(float64(logger.TotalTiles) / time.Now().Sub(logger.StartTime).Seconds())
-		//string_time := time.Now().Round(time.Second).String()
-		logger.LastTick = time.Now()
-		log.Printf("| [%4d/%4d] | tiles: %4.2fm | elapsed: %5ds |tps: %5d\n",logger.CountZoom,logger.SizeZoom,float64(logger.TotalTiles)/1000000.0,int(time.Now().Sub(logger.StartTime).Seconds()),tiles_per_sec)
+		string_time := time.Now().Round(time.Second).String()
+
+		log.Printf("%s | tiles: %dk | elapsed: %d |tps: %d | Zoom: %d [%d/%d]\n",string_time,logger.TotalTiles / 1000,int(time.Now().Sub(logger.StartTime).Seconds()),tiles_per_sec,tileid.Z,logger.CountZoom,logger.SizeZoom)
 	}
 }
 
@@ -69,7 +68,7 @@ type Vector_Tile struct {
 }
 
 func Make_Logger(startime time.Time) *Logger {
-	return &Logger{StartTime:startime,LastTick:startime}
+	return &Logger{StartTime:startime}
 }
 
 

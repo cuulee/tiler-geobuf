@@ -5,7 +5,9 @@ import (
 	m "github.com/murphy214/mercantile"
 	"github.com/paulmach/go.geojson"
 	g "github.com/murphy214/geobuf"
+	"github.com/murphy214/rdp"
 	"sync"
+	"math"
 )
 
 func Get_Bds_Polygon(coords [][][]float64) (m.Extrema) {
@@ -77,7 +79,9 @@ func Get_Bds_Point(coords []float64) (m.Extrema) {
 }
 
 func Get_Bds(geom *geojson.Geometry) m.Extrema {
-	if geom.Type == "Point" {
+	if geom == nil {
+		return m.Extrema{}
+	} else if geom.Type == "Point" {
 		return Get_Bds_Point(geom.Point)
 	} else if geom.Type == "LineString" {
 		return Get_Bds_Line(geom.LineString)
@@ -261,6 +265,31 @@ type Return_Struct struct {
 	Feature *geojson.Feature
 }
 
+// rdp simplication
+func RDP_Simplification(feat *geojson.Feature,zoom int) *geojson.Feature {
+	feat = rdp.RDP(feat,zoom)
+	if feat.Geometry.Type == "" {
+		feat = &geojson.Feature{}
+	}
+	return feat
+			
+}
+
+func RDP_Bool(tileid m.TileID) bool {
+	precision := math.Ceil((float64(int(tileid.Z)) * math.Ln2 + math.Log(4096.0 / 360.0 / 0.5)) / math.Ln10)
+	simpl := math.Pow(10,-precision)
+	//bds := m.Bounds(tileid)
+	//deltax := (bds.E - bds.W) / 4096.0
+	fmt.Println(simpl,tileid,precision)
+	if precision >= 6 {
+		return false 
+	} else {
+		return true
+	}
+}
+
+
+
 // serves a tile from a geobuf server
 func (geobuf_serve Geobuf_Serve) Make_Tile(tileid m.TileID) []byte {
 	geobuf_serve.Mutex.Lock()
@@ -274,7 +303,7 @@ func (geobuf_serve Geobuf_Serve) Make_Tile(tileid m.TileID) []byte {
 
 	parent := m.Parent(tileid)
 	var tilecloak m.TileID
-	if int(parent.Z) > 14 {
+	if int(parent.Z) >= 14 {
 		center := m.Center(tileid)
 		tilecloak = m.Tile(center[0],center[1],14)
 	} else {
@@ -282,39 +311,44 @@ func (geobuf_serve Geobuf_Serve) Make_Tile(tileid m.TileID) []byte {
 	}
 
 	positions := geobuf_serve.Tile_Map[tilecloak]
+	//tileid = tilecloak
 	//fmt.Println(tileid)
 	//fmt.Println(parent)
 	c := make(chan Return_Struct)
+    maxGoroutines := 1000
+    guard := make(chan struct{}, maxGoroutines)
+
 	feats := []*geojson.Feature{}
-	counter := 0
 	for _,pos := range positions {
-		counter += 1
+	    guard <- struct{}{} // would block if guard channel is already filled
+
 		go func(pos [2]int,c chan Return_Struct) {
-			mymap := Map_Feature(geobuf_serve.Geobuf.FeaturePos(pos),int(tileid.Z),parent)
+		    <-guard
+
+			var mymap map[m.TileID][]*geojson.Feature
+			i := geobuf_serve.Geobuf.FeaturePos(pos)
+			fmt.Println(RDP_Bool(tileid),tileid)
+			if RDP_Bool(tileid){
+				i = RDP_Simplification(i,int(tileid.Z))
+			}
+			if i.Geometry != nil {
+				mymap = Map_Feature(i,int(tileid.Z),parent)
+			} else {
+				mymap = map[m.TileID][]*geojson.Feature{}
+			}
 			//fmt.Println(mymap,tileid)
 			feat,inbool := mymap[tileid]
+
 			if inbool == false || len(feat) == 0 {
 				c <- Return_Struct{BoolVal:false,Feature:&geojson.Feature{}}
 			} else {
 				c <- Return_Struct{BoolVal:true,Feature:feat[0]}
 			}
 		}(pos,c)
-		if counter == 1000 {
-			count := 0
-			for count < counter {
-				out := <-c
-
-				if out.BoolVal == true {
-					feats = append(feats,out.Feature)
-				}				
-				count += 1
-			}
-			counter = 0
-		}
 	}
 
 	count := 0
-	for count < counter {
+	for count < len(positions) {
 		out := <-c
 
 		if out.BoolVal == true {

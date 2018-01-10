@@ -5,6 +5,8 @@ import (
 	"github.com/murphy214/gotile-geobuf/vector-tile/2.1"
 	"github.com/golang/protobuf/proto"
 	g "github.com/murphy214/geobuf"
+	rdp "github.com/murphy214/rdp"
+
 	"reflect"
 	"fmt"
 	"sync"
@@ -183,7 +185,7 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int
 			// if turns out to be null drop feature
 			i := geobuf.FeaturePos(pos)
 			if rdpbool == true {
-				i.Geometry = RDP(i.Geometry,int(tileid.Z))
+				i = rdp.RDP(i,int(tileid.Z))
 			}
 
 			if i.Geometry.Type == "" {
@@ -250,7 +252,7 @@ func Make_Tile(tileid m.TileID, geobuf *g.Geobuf, prefix string,size_mapping int
 		bytevals,_ = proto.Marshal(&tile)
 		if len(bytevals) > 0 {
 			mbtile.Add_Tile(tileid,bytevals)
-			logger.Add()
+			logger.Add(tileid)
 		}
 	} else {
 		bytevals = []byte{}
@@ -467,7 +469,7 @@ func Make_Tile_Geojson(tileid m.TileID,feats []*geojson.Feature, prefix string,m
 		bytevals,_ = proto.Marshal(&tile)
 		if len(bytevals) > 0 {
 			mbtile.Add_Tile(tileid,bytevals)
-			logger.Add()
+			logger.Add(tileid)
 		}
 	} else {
 		bytevals = []byte{}
@@ -490,6 +492,7 @@ func Make_Tile_Geojson2(tileid m.TileID,feats []*geojson.Feature, prefix string)
 	//valuesmap := map[*vector_tile.Tile_Value]uint32{}
 
 	// iterating through each feature
+	rdpbool := false
 	features := []*vector_tile.Tile_Feature{}
 	c := make(chan *vector_tile.Tile_Feature)
 	// setting and converting coordinate	
@@ -498,9 +501,13 @@ func Make_Tile_Geojson2(tileid m.TileID,feats []*geojson.Feature, prefix string)
 	var bytevals []byte
 	var mapme sync.Map 
 	config := &Properties_Config{KeysMap:&mapme,ValuesMap:&mapme}
+    maxGoroutines := 100
+    guard := make(chan struct{}, maxGoroutines)
 
 	//position := []int32{0, 0}
 	for _,i := range feats {
+        guard <- struct{}{} // would block if guard channel is already filled
+
 		go func(i *geojson.Feature,c chan *vector_tile.Tile_Feature) {
 			// creating cursor used in geometry creation
 
@@ -510,11 +517,23 @@ func Make_Tile_Geojson2(tileid m.TileID,feats []*geojson.Feature, prefix string)
 				i = &geojson.Feature{}
 			}
 			*/
+		    <-guard
+
+			if rdpbool == true {
+				i = rdp.RDP(i,int(tileid.Z))
+			}
+
+			if i.Geometry.Type == "" {
+				i = &geojson.Feature{}
+			}
+			
 			tags := config.Update_Properties(i.Properties)
 			var geometry []uint32
 
 			// logic for point feature
-			if i.Geometry.Type == "Point" {
+			if i.Geometry == nil {
+				c <- &vector_tile.Tile_Feature{}
+			} else if i.Geometry.Type == "Point" {
 				geometry = cur.Make_Point_Float(i.Geometry.Point)
 				feat_type := vector_tile.Tile_POINT
 				c <- &vector_tile.Tile_Feature{Tags: tags, Type: &feat_type, Geometry: geometry}

@@ -75,6 +75,7 @@ func (filemap *File_Map) Zoom_Pass() {
         guard <- struct{}{} // would block if guard channel is already filled
 		wg.Add(1)
 		go func(k m.TileID,v *g.Geobuf) {
+			filemap.Zoom = int(k.Z)
 			if boolval == false {
 			//fmt.Println(Number_Features(int(k.Z),filemap.Config.Maxzoom,v.Total_Features))
 		       	<-guard
@@ -113,7 +114,11 @@ func (filemap *File_Map) Zoom_Pass() {
 
 
 				os.Remove(v.Filename)
-				Make_Zoom_Drill(k,g.Read_FeatureCollection(bytevals),filemap.Config.Prefix,filemap.Config.Maxzoom,filemap.Config.Mbtiles,filemap.Config.Logger)
+				if filemap.Config.Drill_Zoom != filemap.Config.Maxzoom {
+					Make_Zoom_Drill(k,g.Read_FeatureCollection(bytevals),filemap.Config.Prefix,filemap.Config.Maxzoom,filemap.Config.Mbtiles,filemap.Config.Logger)
+				}
+
+				
 				//totalmem += sizemem
 
 				filemap.SS.Lock()
@@ -141,29 +146,33 @@ func (filemap *File_Map) Make_Tiles() {
 	//fmt.Printf("%+v%s",db,"Imheredbdv")
 	filemap.Config.Currentzoom = filemap.Zoom
 	filemap.Zoom_Pass()	
+	if filemap.Zoom == filemap.Config.Maxzoom {
 
-	for filemap.Zoom <= filemap.Config.Maxzoom {
-		if len(filemap.File_Map) == 0 {
-			//fmt.Println("shit")
-			filemap.Zoom = 10000
-		} else {
-			//fmt.Println("here1")
-			filemap = filemap.Drill_Map()
-			filemap.Config.Currentzoom = filemap.Zoom
+	
+	} else {
+		for filemap.Zoom <= filemap.Config.Maxzoom {
+			if len(filemap.File_Map) == 0 {
+				//fmt.Println("shit")
+				filemap.Zoom = 10000
+			} else {
+				//fmt.Println("here1")
+				filemap = filemap.Drill_Map()
+				filemap.Config.Currentzoom = filemap.Zoom
 
-			filemap.Zoom_Pass()	
+				filemap.Zoom_Pass()	
+			}
+
+
+
+			//fmt.Printf("%+v,%+v\n",filemap.Config,filemap.Config.FirstFeature)
+			//fmt.Println(vtlist)
+			//fmt.Println(filemap.Zoom)
 		}
-
-
-
-		//fmt.Printf("%+v,%+v\n",filemap.Config,filemap.Config.FirstFeature)
-		//fmt.Println(vtlist)
-		//fmt.Println(filemap.Zoom)
 	}
-
 
 	filemap.Config.Mbtiles.Commit()
 
 	os.RemoveAll(filemap.Config.Dir)
+	
 }
 

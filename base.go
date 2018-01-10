@@ -382,7 +382,7 @@ func Create_Map(geobuf *g.Geobuf,config Config) *File_Map {
 	newlist := [][2]int{}
 	os.MkdirAll(config.Dir, os.ModePerm)
 	filemap := &File_Map{Dir:config.Dir,Zoom:config.Minzoom,File_Map:map[m.TileID]*g.Geobuf{},Increment:config.Increment,Config:config}
-	//totalcount := 0
+	totalcount := 0
 	k := m.TileID{0,0,0}
 	firstbool := false
 
@@ -398,8 +398,8 @@ func Create_Map(geobuf *g.Geobuf,config Config) *File_Map {
 		if len(newlist) == filemap.Increment {
 			Map_Bulk(newlist,geobuf,filemap,k,true)
 			newlist = [][2]int{}
-			//totalcount += filemap.Increment
-			//fmt.Printf("\r%d Values Mapped.        ",totalcount)
+			totalcount += filemap.Increment
+			fmt.Printf("\r%d Values Mapped.        ",totalcount)
 		}
 
 	}
